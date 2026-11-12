@@ -32,7 +32,6 @@ The Compose defaults are deliberately conservative:
 --max-num-seqs 1
 --max-num-batched-tokens 1024
 --enforce-eager
---swap-space 0
 ```
 
 The model files select the GPU memory fraction:
@@ -112,6 +111,26 @@ mkdir -p "$SCOPE_VLLM_DIR/data/huggingface" "$SCOPE_VLLM_DIR/data/vllm"
 
 Edit `$SCOPE_VLLM_DIR/.env.common` and replace
 `VLLM_API_KEY=replace-with-a-strong-key` with a real secret.
+
+`VLLM_API_KEY` is not an OpenAI, DeepSeek, or Hugging Face key. It is an
+arbitrary shared secret that protects this local vLLM endpoint. Generate a new
+one:
+
+```bash
+openssl rand -hex 32
+```
+
+Put that value in `.env.common`:
+
+```dotenv
+VLLM_API_KEY=<generated-value>
+```
+
+The same value is passed to SCOPE as `--api-key`. The vLLM server rejects
+requests that do not send `Authorization: Bearer <generated-value>`.
+
+`HF_TOKEN` is separate and only needed for gated Hugging Face models. The
+Qwen models used here are public, so it can stay empty.
 
 Never commit `.env.common`, `.env.3b`, `.env.7b`, or `data/`.
 
@@ -259,8 +278,9 @@ switch only the `--synthesizer-*` options to a stronger hosted model.
 
 ## Troubleshooting
 
-- If vLLM rejects `--swap-space 0`, remove those two command entries. The rest
-  of the low-memory settings still apply.
+- This stack intentionally avoids `--swap-space`; the NVIDIA vLLM 26.08 image
+  does not accept it. If another vLLM release rejects a flag, inspect
+  `vllm serve --help` for that image and remove the unsupported entry.
 - If Compose cannot access the GPU, check how the existing vLLM containers are
   configured and mirror that mechanism. A common fallback is replacing the
   `deploy.resources.reservations.devices` block with `gpus: all`.

@@ -47,8 +47,6 @@ services:
       - --gpu-memory-utilization
       - ${VLLM_GPU_MEMORY_UTILIZATION:-0.05}
       - --enforce-eager
-      - --swap-space
-      - "0"
     logging:
       driver: json-file
       options:
