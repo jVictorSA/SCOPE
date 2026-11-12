@@ -6,9 +6,12 @@ This example demonstrates:
 1. Creating a model adapter
 2. Initializing the SCOPEOptimizer
 3. Using it in an agent loop
+
+Results are saved to examples/results/basic_usage/<timestamp>/ by default.
+Use --output-dir to choose another base directory, or --temp to discard them.
 """
+import argparse
 import asyncio
-import tempfile
 
 from dotenv import load_dotenv
 
@@ -16,60 +19,66 @@ from dotenv import load_dotenv
 from scope import SCOPEOptimizer
 from scope.models import create_openai_model
 
+from _output import add_output_args, run_context
+
 # Load environment variables from .env file
 load_dotenv()
 
 
-async def main():
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="SCOPE basic usage example")
+    add_output_args(parser)
+    return parser.parse_args()
+
+
+async def main(args):
     """Basic SCOPE usage example."""
-    
-    # Create a temporary directory for SCOPE data
-    with tempfile.TemporaryDirectory() as exp_path:
-        print(f"Using temporary directory: {exp_path}")
-        
+    with run_context("basic_usage", args) as run:
         # Step 1: Create a model adapter
         # Option A: OpenAI (requires OPENAI_API_KEY env var)
-        model = create_openai_model("gpt-4o-mini")
-        
+        model = run.wrap_model(create_openai_model("gpt-4o-mini"))
+
         # Option B: Anthropic (requires ANTHROPIC_API_KEY env var)
         # from scope.models import create_anthropic_model
         # model = create_anthropic_model("claude-3-5-sonnet-20241022")
-        
+
         # Option C: LiteLLM for any provider
         # from scope.models import create_litellm_model
         # model = create_litellm_model("gpt-4o-mini")
-        
+
         # Step 2: Initialize the optimizer
         optimizer = SCOPEOptimizer(
             synthesizer_model=model,
-            exp_path=exp_path,
+            exp_path=run.exp_path,
             enable_quality_analysis=True,
             quality_analysis_frequency=3,  # Analyze every 3 steps
             auto_accept_threshold="medium",  # Accept medium+ confidence
             max_rules_per_task=10,
+            store_history=True,
         )
-        
+
         print("SCOPEOptimizer initialized!")
-        
+
         # Step 3: Load previously learned strategic rules
         # This is critical for cross-task learning - strategic rules persist across runs
         base_prompt = "You are a helpful AI assistant."
         strategic_rules = optimizer.get_strategic_rules_for_agent("demo_agent")
         current_prompt = base_prompt + strategic_rules
-        
+
         if strategic_rules:
             print(f"Loaded strategic rules ({len(strategic_rules)} chars)")
         else:
             print("No strategic rules loaded yet (first run)")
-        
+
         # Step 4: Simulate an agent loop
-        
+
         for step in range(1, 6):
             print(f"\n--- Step {step} ---")
-            
+
             # Simulate an error on step 2
             error = Exception("JSON parsing failed") if step == 2 else None
-            
+
             # Call SCOPE after each step
             result = await optimizer.on_step_complete(
                 agent_name="demo_agent",
@@ -82,7 +91,7 @@ async def main():
                 current_system_prompt=current_prompt,
                 task_id="demo_task_001",
             )
-            
+
             # Apply the update if one was generated
             if result:
                 update_text, guideline_type = result
@@ -90,7 +99,7 @@ async def main():
                 current_prompt += f"\n\n## Learned Guideline:\n{update_text}"
             else:
                 print("  No guideline generated")
-        
+
         # Show final statistics
         print("\n" + "=" * 50)
         print("Final Statistics:")
@@ -98,7 +107,9 @@ async def main():
         if 'strategic_rules_count' in stats:
             print(f"  Strategic rules: {stats['strategic_rules_count']}")
 
+        run.save_text("final_prompt.md", current_prompt)
+        run.save_summary({"statistics": stats})
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
-
+    asyncio.run(main(parse_args()))

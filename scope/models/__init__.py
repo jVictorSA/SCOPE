@@ -4,18 +4,26 @@ Model adapters for SCOPE.
 This module provides adapters for various LLM providers:
 - OpenAI (and compatible APIs like Azure, vLLM)
 - Anthropic Claude
+- DeepSeek
 - LiteLLM (100+ providers)
 - Custom adapters (sync or async)
 
 Usage:
     ```python
-    from scope.models import create_openai_model, create_anthropic_model
-    
+    from scope.models import (
+        create_openai_model,
+        create_anthropic_model,
+        create_deepseek_model,
+    )
+
     # OpenAI
     model = create_openai_model("gpt-4o-mini")
     
     # Anthropic
     model = create_anthropic_model("claude-3-5-sonnet-20241022")
+
+    # DeepSeek
+    model = create_deepseek_model("deepseek-chat")
     ```
 
 Creating Custom Adapters:
@@ -53,6 +61,7 @@ from .base import (
     ModelResponse,
     SyncModelAdapter,
 )
+from .deepseek_adapter import DeepSeekAdapter, create_deepseek_model
 from .litellm_adapter import LiteLLMAdapter, create_litellm_model
 from .openai_adapter import OpenAIAdapter, create_openai_model
 
@@ -70,6 +79,9 @@ __all__ = [
     # Anthropic
     "AnthropicAdapter",
     "create_anthropic_model",
+    # DeepSeek
+    "DeepSeekAdapter",
+    "create_deepseek_model",
     # LiteLLM
     "LiteLLMAdapter",
     "create_litellm_model",

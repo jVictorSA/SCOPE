@@ -29,6 +29,8 @@ htmlcov/
 # SCOPE data (example outputs)
 scope_data/
 test_scope_data/
+examples/results/*
+!examples/results/README.md
 
 # Environment files (contain secrets)
 .env

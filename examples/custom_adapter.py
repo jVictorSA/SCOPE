@@ -5,11 +5,14 @@ Custom Model Adapter Example for SCOPE.
 This example shows how to create your own model adapter to integrate
 SCOPE with any LLM provider or local model.
 """
+import argparse
 import asyncio
 from typing import List
 
 from scope import SCOPEOptimizer
 from scope.models import BaseModelAdapter, Message, ModelResponse
+
+from _output import add_output_args, run_context
 
 
 class MyCustomAdapter(BaseModelAdapter):
@@ -94,63 +97,79 @@ class MockModelForTesting(BaseModelAdapter):
         return ModelResponse(content=json.dumps(response))
 
 
-async def main():
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="SCOPE custom adapter example")
+    add_output_args(parser)
+    return parser.parse_args()
+
+
+async def main(args):
     """Demonstrate custom adapter usage."""
-    
-    print("=== Custom Adapter Example ===\n")
-    
-    # Example 1: Using a custom adapter
-    print("1. Using MyCustomAdapter:")
-    custom_model = MyCustomAdapter(
-        endpoint_url="http://localhost:8000/v1/chat",
-        api_key="your-api-key"
-    )
-    
-    optimizer = SCOPEOptimizer(
-        synthesizer_model=custom_model,
-        exp_path="./scope_data",
-    )
-    
-    result = await optimizer.on_step_complete(
-        agent_name="test_agent",
-        agent_role="Test Agent",
-        task="Test task",
-        error=Exception("Test error"),
-        current_system_prompt="You are helpful.",
-        task_id="test_001",
-    )
-    
-    if result:
-        guideline, guideline_type = result
-        print(f"   Generated guideline: {guideline[:50]}...")
-    
-    # Example 2: Using mock model for testing
-    print("\n2. Using MockModelForTesting:")
-    mock_model = MockModelForTesting([
-        {"update_text": "Test guideline 1", "rationale": "Test", "confidence": "high"},
-        {"update_text": "Test guideline 2", "rationale": "Test", "confidence": "medium"},
-    ])
-    
-    test_optimizer = SCOPEOptimizer(
-        synthesizer_model=mock_model,
-        exp_path="./test_scope_data",
-    )
-    
-    for i in range(3):
-        result = await test_optimizer.on_step_complete(
+    with run_context("custom_adapter", args) as run:
+        print("=== Custom Adapter Example ===\n")
+
+        # Example 1: Using a custom adapter
+        print("1. Using MyCustomAdapter:")
+        custom_model = run.wrap_model(MyCustomAdapter(
+            endpoint_url="http://localhost:8000/v1/chat",
+            api_key="your-api-key"
+        ))
+
+        optimizer = SCOPEOptimizer(
+            synthesizer_model=custom_model,
+            exp_path=run.experiment_dir("custom_adapter"),
+            store_history=True,
+        )
+
+        result = await optimizer.on_step_complete(
             agent_name="test_agent",
             agent_role="Test Agent",
             task="Test task",
-            error=Exception(f"Error {i + 1}"),
+            error=Exception("Test error"),
             current_system_prompt="You are helpful.",
-            task_id="test_002",
+            task_id="test_001",
         )
+
         if result:
-            print(f"   Step {i + 1}: {result[0][:30]}...")
-    
-    print("\n=== Done ===")
+            guideline, guideline_type = result
+            print(f"   Generated guideline: {guideline[:50]}...")
+
+        # Example 2: Using mock model for testing
+        print("\n2. Using MockModelForTesting:")
+        mock_model = run.wrap_model(MockModelForTesting([
+            {"update_text": "Test guideline 1", "rationale": "Test", "confidence": "high"},
+            {"update_text": "Test guideline 2", "rationale": "Test", "confidence": "medium"},
+        ]))
+
+        test_optimizer = SCOPEOptimizer(
+            synthesizer_model=mock_model,
+            exp_path=run.experiment_dir("mock_model"),
+            store_history=True,
+        )
+
+        results = []
+        for i in range(3):
+            result = await test_optimizer.on_step_complete(
+                agent_name="test_agent",
+                agent_role="Test Agent",
+                task="Test task",
+                error=Exception(f"Error {i + 1}"),
+                current_system_prompt="You are helpful.",
+                task_id="test_002",
+            )
+            results.append(result[0] if result else None)
+            if result:
+                print(f"   Step {i + 1}: {result[0][:30]}...")
+
+        print("\n=== Done ===")
+        run.save_summary({
+            "custom_adapter_statistics": optimizer.get_statistics(),
+            "mock_model_statistics": test_optimizer.get_statistics(),
+            "mock_model_results": results,
+        })
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main(parse_args()))
 

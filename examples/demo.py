@@ -4,10 +4,12 @@ Demo script for SCOPE (Self-evolving Context Optimization via Prompt Evolution).
 
 This demonstrates the core functionality without requiring the full agent system.
 """
-import tempfile
+import argparse
 import os
 from dataclasses import dataclass
 from typing import Any
+
+from _output import add_output_args, run_context
 
 # Simulate a simple model for testing
 @dataclass
@@ -112,7 +114,7 @@ def demo_synthesizer():
     print()
 
 
-def demo_guideline_history():
+def demo_guideline_history(run):
     """Demonstrate the GuidelineHistory."""
     print("=" * 60)
     print("DEMO 2: GuidelineHistory (Guideline Logging)")
@@ -120,10 +122,10 @@ def demo_guideline_history():
     
     from scope import GuidelineHistory
     
-    # Create temporary directory for testing
-    with tempfile.TemporaryDirectory() as tmpdir:
-        print(f"\nUsing temporary directory: {tmpdir}")
-        
+    # Store this demo's results inside the run directory
+    with run.experiment("guideline_history") as tmpdir:
+        print(f"\nUsing results directory: {tmpdir}")
+
         # Create history store
         history = GuidelineHistory(tmpdir)
         
@@ -182,7 +184,7 @@ def demo_guideline_history():
     print()
 
 
-async def demo_scope_optimizer():
+async def demo_scope_optimizer(run):
     """Demonstrate the SCOPEOptimizer with auto-accept mechanism."""
     print("=" * 60)
     print("DEMO 3: SCOPEOptimizer with Auto-Accept")
@@ -190,12 +192,12 @@ async def demo_scope_optimizer():
     
     from scope import SCOPEOptimizer
     
-    # Create temporary directory for testing
-    with tempfile.TemporaryDirectory() as tmpdir:
-        print(f"\nUsing temporary directory: {tmpdir}")
-        
+    # Store this demo's results inside the run directory
+    with run.experiment("scope_optimizer") as tmpdir:
+        print(f"\nUsing results directory: {tmpdir}")
+
         # Create prompt updater with auto-accept threshold
-        model = MockModel()
+        model = run.wrap_model(MockModel())
         updater = SCOPEOptimizer(
             synthesizer_model=model,
             exp_path=tmpdir,
@@ -294,7 +296,7 @@ async def demo_scope_optimizer():
     print()
 
 
-async def demo_two_tier_learning():
+async def demo_two_tier_learning(run):
     """Demonstrate two-tier learning: tactical (short-term) vs strategic (long-term)."""
     print("=" * 60)
     print("DEMO 4: Two-Tier Learning (Tactical vs Strategic)")
@@ -306,15 +308,16 @@ async def demo_two_tier_learning():
         from scope import SCOPEOptimizer
     import asyncio
     
-    # Create temporary directory for this demo
-    with tempfile.TemporaryDirectory() as temp_dir:
-        print(f"\n→ Using temporary directory: {temp_dir}\n")
-        
+    # Store this demo's results inside the run directory
+    with run.experiment("two_tier_learning") as temp_dir:
+        print(f"\n→ Using results directory: {temp_dir}\n")
+
         # Create updater with strategic memory enabled
-        model = MockModel()
+        model = run.wrap_model(MockModel())
         updater = SCOPEOptimizer(
             synthesizer_model=model,
             exp_path=temp_dir,
+            store_history=True,
             enable_quality_analysis=True,
             quality_analysis_frequency=1,
             auto_accept_threshold="low",  # Accept most updates for demo
@@ -396,30 +399,40 @@ async def demo_two_tier_learning():
     print()
 
 
-async def main():
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="SCOPE demo")
+    add_output_args(parser)
+    return parser.parse_args()
+
+
+async def main(args):
     """Run all demos."""
-    print("\n" + "=" * 60)
-    print("PROMPT OPTIMIZER DEMO - Two-Tier Learning")
-    print("=" * 60)
-    print("\nThis demonstrates the two-tier learning system:")
-    print("- TACTICAL: Task-specific rules (short-term)")
-    print("- STRATEGIC: General best practices (long-term)\n")
-    
-    await demo_two_tier_learning()
-    
-    print("\n" + "=" * 60)
-    print("DEMO COMPLETE")
-    print("=" * 60)
-    print("\nThe two-tier system allows agents to:")
-    print("✓ Learn from specific task context (tactical)")
-    print("✓ Build cross-task knowledge base (strategic)")
-    print("✓ Auto-load best practices at initialization\n")
+    with run_context("demo", args) as run:
+        print("\n" + "=" * 60)
+        print("PROMPT OPTIMIZER DEMO - Two-Tier Learning")
+        print("=" * 60)
+        print("\nThis demonstrates the two-tier learning system:")
+        print("- TACTICAL: Task-specific rules (short-term)")
+        print("- STRATEGIC: General best practices (long-term)\n")
+
+        await demo_two_tier_learning(run)
+
+        print("\n" + "=" * 60)
+        print("DEMO COMPLETE")
+        print("=" * 60)
+        print("\nThe two-tier system allows agents to:")
+        print("✓ Learn from specific task context (tactical)")
+        print("✓ Build cross-task knowledge base (strategic)")
+        print("✓ Auto-load best practices at initialization\n")
+
+        run.save_summary({"demo": "two_tier_learning"})
 
 
 if __name__ == "__main__":
     import asyncio
     try:
-        asyncio.run(main())
+        asyncio.run(main(parse_args()))
     except Exception as e:
         print(f"\n✗ Demo failed: {e}")
         import traceback

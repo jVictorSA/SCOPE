@@ -51,7 +51,8 @@
 - 📊 **Dual-Stream Memory** — Tactical (task-specific) + Strategic (cross-task) learning
 - 🎯 **Best-of-N Selection** — Generates multiple candidates and selects the best
 - 🧠 **Memory Optimization** — Automatically consolidates and deduplicates rules
-- 🔌 **Universal Model Support** — Works with OpenAI, Anthropic, and 100+ providers via LiteLLM
+- 📈 **Benchmark Evolution** — Optional EvalScope integration for testing prompt improvements on GSM8K, ARC, and other benchmarks
+- 🔌 **Universal Model Support** — Works with OpenAI, Anthropic, DeepSeek, and 100+ providers via LiteLLM
 
 ## Installation
 
@@ -243,13 +244,21 @@ Strategic rules are stored in `{exp_path}/strategic_memory/global_rules.json` an
 ### Model Adapters
 
 ```python
-from scope.models import create_openai_model, create_anthropic_model, create_litellm_model
+from scope.models import (
+    create_openai_model,
+    create_anthropic_model,
+    create_deepseek_model,
+    create_litellm_model,
+)
 
 # OpenAI
 model = create_openai_model("gpt-4o-mini")
 
 # Anthropic
 model = create_anthropic_model("claude-3-5-sonnet-20241022")
+
+# DeepSeek (uses DEEPSEEK_API_KEY)
+model = create_deepseek_model("deepseek-chat")
 
 # LiteLLM (100+ providers)
 model = create_litellm_model("gpt-4o-mini")           # OpenAI
@@ -305,6 +314,10 @@ load_dotenv()  # API keys automatically loaded
 
 See [`.env.template`](.env.template) for all supported providers.
 
+DeepSeek uses `DEEPSEEK_API_KEY` and optionally `DEEPSEEK_API_BASE`
+(default: `https://api.deepseek.com`). Use `deepseek-chat` with SCOPE;
+`deepseek-reasoner` does not accept a `temperature` parameter.
+
 ### Confidence Thresholds
 
 | Threshold | Accepts | Use Case |
@@ -344,9 +357,113 @@ python examples/test_scope_deep.py
 # With custom model/provider
 python examples/test_simple.py --model gpt-4o --provider openai
 python examples/test_scope_deep.py --model claude-3-5-sonnet-20241022 --provider anthropic
+python examples/test_simple.py --provider deepseek --model deepseek-chat
 ```
 
 Run `--help` for all options.
+
+### Saving Example Results
+
+Every example saves its results to a timestamped run directory by default:
+
+```text
+examples/results/
+  test_simple/
+    20261029-213015/
+      run_config.json
+      summary.json
+      final_prompt.md
+      logs/
+        run.log
+        model_calls.jsonl
+      strategic_memory/
+        global_rules.json
+      prompt_updates/
+```
+
+This includes generated strategic memory, guideline history, console output, and
+the prompts/responses sent to the model. Choose a different base directory with
+`--output-dir` or `SCOPE_EXAMPLE_OUTPUT_DIR`:
+
+```bash
+# Default location
+python examples/test_simple.py
+
+# Custom base directory
+python examples/test_simple.py --output-dir ./my_runs
+SCOPE_EXAMPLE_OUTPUT_DIR=./my_runs python examples/test_simple.py
+
+# Name the run instead of using a timestamp
+python examples/test_simple.py --output-dir ./my_runs --run-name first-attempt
+
+# Discard results (previous temporary-directory behavior)
+python examples/quick_start.py --temp
+```
+
+Generated run folders under `examples/results/` are ignored by git.
+
+### Benchmark Evolution with EvalScope
+
+SCOPE includes an optional [EvalScope](https://github.com/modelscope/evalscope)
+integration for testing whether prompt evolution improves real benchmark
+scores. EvalScope downloads and manages the benchmark datasets; SCOPE consumes
+its public predictions, reviews, and reports.
+
+EvalScope currently requires Python 3.10 or newer:
+
+```bash
+pip install -e ".[benchmarks]"
+```
+
+Run a small GSM8K pilot with DeepSeek:
+
+```bash
+export DEEPSEEK_API_KEY=sk-...
+python examples/evalscope_evolution.py \
+  --provider deepseek --model deepseek-chat \
+  --datasets gsm8k \
+  --train-limit 20 --eval-limit 20 \
+  --rounds 2 --max-steps-per-round 10
+```
+
+Use any OpenAI-compatible endpoint for evaluation while SCOPE's synthesis model
+uses DeepSeek:
+
+```bash
+python examples/evalscope_evolution.py \
+  --provider local --model Qwen/Qwen2.5-7B-Instruct \
+  --api-url http://localhost:8000/v1 --api-key EMPTY \
+  --synthesizer-provider deepseek --synthesizer-model deepseek-chat \
+  --datasets gsm8k arc --rounds 3
+```
+
+Each round:
+
+1. Evaluates the current prompt on a held-out EvalScope slice.
+2. Runs a separate training slice and reads per-sample reviews.
+3. Sends incorrect answers to `SCOPEOptimizer.on_step_complete()`.
+4. Appends accepted tactical guidelines to the prompt and re-evaluates.
+
+The run directory contains:
+
+```text
+examples/results/evalscope_evolution/<timestamp>/
+  benchmark_summary.json
+  prompts/<dataset>/round-00-baseline.txt
+  prompts/<dataset>/round-01-train.txt
+  prompts/<dataset>/round-01-eval.txt
+  evalscope/<dataset>/<phase>/predictions/
+  evalscope/<dataset>/<phase>/reviews/
+  evalscope/<dataset>/<phase>/reports/
+  evalscope/<dataset>/<phase>/phase_result.json
+  artifacts/experiments/<agent>/strategic_memory/
+  logs/model_calls.jsonl
+```
+
+`--limit` in EvalScope applies per subset, so multi-subset benchmarks such as
+ARC can evaluate more samples than the requested number. Different shuffle
+seeds do not guarantee disjoint train/eval samples; use a larger evaluation
+slice and inspect the run artifacts when interpreting a pilot.
 
 ## Development
 

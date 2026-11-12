@@ -17,6 +17,7 @@ Usage:
     # Specify model and provider
     python examples/test_scope_deep.py --model gpt-4o --provider openai
     python examples/test_scope_deep.py --model claude-3-5-sonnet-20241022 --provider anthropic
+    python examples/test_scope_deep.py --model deepseek-chat --provider deepseek
     python examples/test_scope_deep.py --model gemini/gemini-1.5-flash --provider litellm
     
     # Override API credentials
@@ -26,13 +27,14 @@ import argparse
 import asyncio
 import sys
 import os
-import tempfile
 import json
 
 # Add parent directory to path for local development
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
+
+from _output import add_output_args, run_context
 
 # Load environment variables
 load_dotenv()
@@ -49,17 +51,18 @@ Examples:
   python test_scope_deep.py --model gpt-4o                     # Use GPT-4o
   python test_scope_deep.py --provider openai                  # Use OpenAI adapter directly
   python test_scope_deep.py --provider anthropic --model claude-3-5-sonnet-20241022
+  python test_scope_deep.py --provider deepseek --model deepseek-chat
   python test_scope_deep.py --api-key sk-xxx                   # Override API key
         """
     )
     parser.add_argument(
         "--model", "-m",
-        default="gpt-4o-mini",
-        help="Model name to use (default: gpt-4o-mini)"
+        default=None,
+        help="Model name to use (default depends on provider)"
     )
     parser.add_argument(
         "--provider", "-p",
-        choices=["openai", "anthropic", "litellm"],
+        choices=["openai", "anthropic", "deepseek", "litellm"],
         default="litellm",
         help="Provider adapter to use (default: litellm)"
     )
@@ -73,28 +76,50 @@ Examples:
         default=None,
         help="Base URL for API (overrides environment variable)"
     )
+    add_output_args(parser)
     return parser.parse_args()
+
+
+DEFAULT_MODELS = {
+    "openai": "gpt-4o-mini",
+    "anthropic": "claude-3-5-sonnet-20241022",
+    "deepseek": "deepseek-chat",
+    "litellm": "gpt-4o-mini",
+}
+
+
+def resolved_model(args):
+    """Return the requested model, or the provider's default."""
+    return args.model or DEFAULT_MODELS.get(args.provider, "gpt-4o-mini")
 
 
 def create_model(args):
     """Create model based on arguments."""
+    model_name = resolved_model(args)
     if args.provider == "openai":
         from scope.models import create_openai_model
         return create_openai_model(
-            model=args.model,
+            model=model_name,
             api_key=args.api_key,
             base_url=args.base_url,
         )
     elif args.provider == "anthropic":
         from scope.models import create_anthropic_model
         return create_anthropic_model(
-            model=args.model,
+            model=model_name,
             api_key=args.api_key,
+        )
+    elif args.provider == "deepseek":
+        from scope.models import create_deepseek_model
+        return create_deepseek_model(
+            model=model_name,
+            api_key=args.api_key,
+            base_url=args.base_url,
         )
     else:  # litellm
         from scope.models import create_litellm_model
         return create_litellm_model(
-            model=args.model,
+            model=model_name,
             api_key=args.api_key,
             base_url=args.base_url,
         )
@@ -130,6 +155,7 @@ async def test_error_synthesis(model, tmpdir, results: TestResults):
     optimizer = SCOPEOptimizer(
         synthesizer_model=model,
         exp_path=tmpdir,
+        store_history=True,
         auto_accept_threshold="low",  # Accept most guidelines for testing
     )
     
@@ -169,6 +195,7 @@ async def test_quality_synthesis(model, tmpdir, results: TestResults):
     optimizer = SCOPEOptimizer(
         synthesizer_model=model,
         exp_path=tmpdir,
+        store_history=True,
         enable_quality_analysis=True,
         quality_analysis_frequency=2,  # Analyze every 2 steps
         auto_accept_threshold="low",
@@ -220,6 +247,7 @@ async def test_strategic_memory(model, tmpdir, results: TestResults):
     optimizer = SCOPEOptimizer(
         synthesizer_model=model,
         exp_path=tmpdir,
+        store_history=True,
         auto_accept_threshold="all",  # Accept everything
         strategic_confidence_threshold=0.3,  # Very low threshold for testing
     )
@@ -297,6 +325,7 @@ async def test_memory_persistence_across_instances(model, tmpdir, results: TestR
     optimizer1 = SCOPEOptimizer(
         synthesizer_model=model,
         exp_path=tmpdir,
+        store_history=True,
         auto_accept_threshold="low",
         strategic_confidence_threshold=0.5,
     )
@@ -317,6 +346,7 @@ async def test_memory_persistence_across_instances(model, tmpdir, results: TestR
     optimizer2 = SCOPEOptimizer(
         synthesizer_model=model,
         exp_path=tmpdir,  # Same path
+        store_history=True,
         auto_accept_threshold="low",
     )
     
@@ -355,6 +385,7 @@ async def test_multiple_agents(model, tmpdir, results: TestResults):
     optimizer = SCOPEOptimizer(
         synthesizer_model=model,
         exp_path=tmpdir,
+        store_history=True,
         auto_accept_threshold="low",
         strategic_confidence_threshold=0.5,
     )
@@ -508,52 +539,73 @@ async def test_statistics(model, tmpdir, results: TestResults):
 async def main():
     """Run all deep functionality tests."""
     args = parse_args()
-    
-    print("\n" + "=" * 60)
-    print("SCOPE Deep Functionality Tests")
-    print("=" * 60)
-    print(f"\nProvider: {args.provider}")
-    print(f"Model: {args.model}")
-    if args.api_key:
-        print(f"API Key: {args.api_key[:8]}...")
-    if args.base_url:
-        print(f"Base URL: {args.base_url}")
-    
-    # Create model for testing
-    model = create_model(args)
-    
-    results = TestResults()
-    
-    # Use temporary directory for all tests
-    with tempfile.TemporaryDirectory() as tmpdir:
-        print(f"\nUsing temp directory: {tmpdir}\n")
-        
-        # Run all tests
-        await test_error_synthesis(model, tmpdir, results)
-        await test_quality_synthesis(model, tmpdir, results)
-        await test_strategic_memory(model, tmpdir, results)
-        await test_memory_persistence_across_instances(model, tmpdir, results)
-        await test_multiple_agents(model, tmpdir, results)
-        await test_guideline_history(model, tmpdir, results)
-        await test_statistics(model, tmpdir, results)
-    
-    # Print summary
-    print("\n" + "=" * 60)
-    print("TEST SUMMARY")
-    print("=" * 60)
-    
-    passed, total = results.summary()
-    
-    print(f"\nPassed: {passed}/{total}")
-    
-    if passed == total:
-        print("\n🎉 All tests passed!")
-    elif passed >= total * 0.7:
-        print("\n✓ Most tests passed (some may fail due to model confidence thresholds)")
-    else:
-        print("\n⚠ Several tests failed. Check the output above.")
-    
-    return passed >= total * 0.7
+
+    with run_context("test_scope_deep", args) as run:
+        print("\n" + "=" * 60)
+        print("SCOPE Deep Functionality Tests")
+        print("=" * 60)
+        print(f"\nProvider: {args.provider}")
+        print(f"Model: {resolved_model(args)}")
+        if args.api_key:
+            print("API Key: ***")
+        if args.base_url:
+            print(f"Base URL: {args.base_url}")
+
+        model = run.wrap_model(create_model(args))
+        results = TestResults()
+
+        # Give every test its own exp_path inside the run directory.
+        await test_error_synthesis(
+            model, run.experiment_dir("error_synthesis"), results
+        )
+        await test_quality_synthesis(
+            model, run.experiment_dir("quality_synthesis"), results
+        )
+        await test_strategic_memory(
+            model, run.experiment_dir("strategic_memory"), results
+        )
+        await test_memory_persistence_across_instances(
+            model, run.experiment_dir("memory_persistence"), results
+        )
+        await test_multiple_agents(
+            model, run.experiment_dir("multiple_agents"), results
+        )
+        await test_guideline_history(
+            model, run.experiment_dir("guideline_history"), results
+        )
+        await test_statistics(
+            model, run.experiment_dir("statistics"), results
+        )
+
+        # Print summary
+        print("\n" + "=" * 60)
+        print("TEST SUMMARY")
+        print("=" * 60)
+
+        passed, total = results.summary()
+        all_passed = passed >= total * 0.7
+
+        print(f"\nPassed: {passed}/{total}")
+
+        if passed == total:
+            print("\n🎉 All tests passed!")
+        elif all_passed:
+            print("\n✓ Most tests passed (some may fail due to model confidence thresholds)")
+        else:
+            print("\n⚠ Several tests failed. Check the output above.")
+
+        run.save_summary({
+            "provider": args.provider,
+            "model": resolved_model(args),
+            "passed": passed,
+            "total": total,
+            "all_passed": all_passed,
+            "results": [
+                {"name": name, "passed": ok, "message": message}
+                for name, ok, message in results.results
+            ],
+        })
+        return all_passed
 
 
 if __name__ == "__main__":

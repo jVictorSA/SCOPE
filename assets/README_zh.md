@@ -44,7 +44,8 @@
 - 📊 **双流记忆** — 战术记忆（任务特定）+ 战略记忆（跨任务）
 - 🎯 **Best-of-N 选择** — 生成多个候选规则并选择最优
 - 🧠 **记忆优化** — 自动合并和去重规则
-- 🔌 **通用模型支持** — 支持 OpenAI、Anthropic 以及通过 LiteLLM 的 100+ 模型提供商
+- 📈 **基准测试演化** — 可选 EvalScope 集成，在 GSM8K、ARC 等基准上验证提示词提升
+- 🔌 **通用模型支持** — 支持 OpenAI、Anthropic、DeepSeek 以及通过 LiteLLM 的 100+ 模型提供商
 
 ## 安装
 
@@ -207,13 +208,21 @@ initial_prompt = base_prompt + strategic_rules  # 应用学习到的知识
 ### 模型适配器
 
 ```python
-from scope.models import create_openai_model, create_anthropic_model, create_litellm_model
+from scope.models import (
+    create_openai_model,
+    create_anthropic_model,
+    create_deepseek_model,
+    create_litellm_model,
+)
 
 # OpenAI
 model = create_openai_model("gpt-4o-mini")
 
 # Anthropic
 model = create_anthropic_model("claude-3-5-sonnet-20241022")
+
+# DeepSeek（使用 DEEPSEEK_API_KEY）
+model = create_deepseek_model("deepseek-chat")
 
 # LiteLLM (100+ 提供商)
 model = create_litellm_model("gpt-4o-mini")           # OpenAI
@@ -311,6 +320,96 @@ python examples/test_scope_deep.py --model claude-3-5-sonnet-20241022 --provider
 ```
 
 运行 `--help` 查看所有选项。
+
+### 保存示例结果
+
+所有示例默认会将结果保存到带时间戳的目录：
+
+```text
+examples/results/
+  test_simple/
+    20261029-213015/
+      run_config.json
+      summary.json
+      final_prompt.md
+      logs/
+        run.log
+        model_calls.jsonl
+      strategic_memory/
+      prompt_updates/
+```
+
+保存内容包括策略记忆、指南历史、控制台日志以及模型请求和响应。可通过
+`--output-dir` 或 `SCOPE_EXAMPLE_OUTPUT_DIR` 修改保存位置：
+
+```bash
+python examples/test_simple.py --output-dir ./my_runs
+SCOPE_EXAMPLE_OUTPUT_DIR=./my_runs python examples/test_simple.py
+python examples/test_simple.py --output-dir ./my_runs --run-name first-attempt
+python examples/quick_start.py --temp  # 不保存结果
+```
+
+`examples/results/` 下生成的运行目录已被 git 忽略。
+
+### 使用 EvalScope 进行基准测试演化
+
+SCOPE 提供可选的 [EvalScope](https://github.com/modelscope/evalscope)
+集成，用于验证提示词演化是否能提升真实基准测试的分数。基准数据集由
+EvalScope 下载和管理，SCOPE 只读取其公开的 predictions、reviews 和 reports。
+
+EvalScope 目前要求 Python 3.10 或更高版本：
+
+```bash
+pip install -e ".[benchmarks]"
+```
+
+使用 DeepSeek 在 GSM8K 上运行一个小型试验：
+
+```bash
+export DEEPSEEK_API_KEY=sk-...
+python examples/evalscope_evolution.py \
+  --provider deepseek --model deepseek-chat \
+  --datasets gsm8k \
+  --train-limit 20 --eval-limit 20 \
+  --rounds 2 --max-steps-per-round 10
+```
+
+也可以使用本地 OpenAI 兼容服务进行评测，同时使用 DeepSeek 生成指南：
+
+```bash
+python examples/evalscope_evolution.py \
+  --provider local --model Qwen/Qwen2.5-7B-Instruct \
+  --api-url http://localhost:8000/v1 --api-key EMPTY \
+  --synthesizer-provider deepseek --synthesizer-model deepseek-chat \
+  --datasets gsm8k arc --rounds 3
+```
+
+每轮流程：
+
+1. 在留出的 EvalScope 评测集上评估当前提示词。
+2. 在单独的训练集上运行，并读取逐样本 reviews。
+3. 将错误答案交给 `SCOPEOptimizer.on_step_complete()`。
+4. 将接受的战术指南追加到提示词，并重新评测。
+
+运行目录包含：
+
+```text
+examples/results/evalscope_evolution/<timestamp>/
+  benchmark_summary.json
+  prompts/<dataset>/round-00-baseline.txt
+  prompts/<dataset>/round-01-train.txt
+  prompts/<dataset>/round-01-eval.txt
+  evalscope/<dataset>/<phase>/predictions/
+  evalscope/<dataset>/<phase>/reviews/
+  evalscope/<dataset>/<phase>/reports/
+  evalscope/<dataset>/<phase>/phase_result.json
+  artifacts/experiments/<agent>/strategic_memory/
+  logs/model_calls.jsonl
+```
+
+EvalScope 的 `--limit` 按子集分别生效，因此 ARC 等多子集基准可能评估超过
+请求数量的样本。不同的 shuffle 种子不保证训练集和评测集完全不重叠；解释
+小型试验结果时请结合运行产物进行检查。
 
 ## 开发
 

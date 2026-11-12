@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- DeepSeek API support via `DeepSeekAdapter` and `create_deepseek_model`
+- `DEEPSEEK_API_BASE` / `DEEPSEEK_BASE_URL` configuration for custom DeepSeek endpoints
+- `--provider deepseek` option in example scripts
+- Example results are now saved to timestamped folders under `examples/results/`
+- `--output-dir`, `--run-name`, and `--temp` options for example scripts
+- Captured console logs, model prompts/responses, run metadata, and summaries
+- Optional EvalScope benchmark integration (`scope.benchmarks`) with round-based
+  train/eval prompt evolution
+- `examples/evalscope_evolution.py` benchmark harness with GSM8K/ARC support
+- `benchmarks` optional dependency extra for EvalScope
+
 ## [0.1.1] - 2025-12-18
 
 ### Fixed

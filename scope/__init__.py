@@ -80,6 +80,7 @@ from .models import (
     AnthropicAdapter,
     BaseModelAdapter,
     CallableModelAdapter,
+    DeepSeekAdapter,
     LiteLLMAdapter,
     Message,
     ModelProtocol,
@@ -87,6 +88,7 @@ from .models import (
     OpenAIAdapter,
     SyncModelAdapter,
     create_anthropic_model,
+    create_deepseek_model,
     create_litellm_model,
     create_openai_model,
 )
@@ -115,9 +117,11 @@ __all__ = [
     # Model adapters
     "OpenAIAdapter",
     "AnthropicAdapter",
+    "DeepSeekAdapter",
     "LiteLLMAdapter",
     "create_openai_model",
     "create_anthropic_model",
+    "create_deepseek_model",
     "create_litellm_model",
     # Prompt templates (for customization)
     "prompts",
