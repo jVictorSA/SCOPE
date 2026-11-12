@@ -460,6 +460,11 @@ the resolved suite is saved as `benchmark_suite.json` in the run directory. See
 [`benchmarks/README.md`](benchmarks/README.md) for the suite schema and local
 backend guidance.
 
+For an isolated local vLLM deployment on a DGX Spark, see
+[`deploy/scope-vllm/README.md`](deploy/scope-vllm/README.md). It uses the
+prebuilt NVIDIA vLLM image, a localhost-only endpoint, and environment-selected
+3B/7B models without modifying other workloads on the host.
+
 Use any OpenAI-compatible endpoint for evaluation while SCOPE's synthesis model
 uses DeepSeek:
 

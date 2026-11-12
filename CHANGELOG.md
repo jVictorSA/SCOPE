@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repository-level benchmark suites in `benchmarks/suites.json`
 - `--suite`, `--suite-file`, `--list-suites`, and `--dry-run` benchmark options
 - Suite loader/validator (`scope.benchmarks.suites`) with deep-merged CLI overrides
+- Isolated local vLLM deployment templates under `deploy/scope-vllm/` for
+  environment-selected 3B/7B benchmark models
 
 ## [0.1.1] - 2025-12-18
 

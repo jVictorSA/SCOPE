@@ -1,0 +1,5 @@
+# Host-only runtime files. Keep secrets and caches out of git.
+.env.common
+.env.3b
+.env.7b
+data/

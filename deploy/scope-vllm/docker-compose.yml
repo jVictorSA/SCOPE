@@ -1,0 +1,66 @@
+name: scope-vllm
+
+services:
+  vllm:
+    image: ${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.08-py3}
+    container_name: scope-vllm
+    restart: "no"
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    ports:
+      - "127.0.0.1:${VLLM_HOST_PORT:-8080}:8000"
+    environment:
+      HF_HOME: /root/.cache/huggingface
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      VLLM_NO_USAGE_STATS: "1"
+      DO_NOT_TRACK: "1"
+      VLLM_API_KEY: ${VLLM_API_KEY:?set VLLM_API_KEY in .env.common}
+      VLLM_CACHE_ROOT: /root/.cache/vllm
+    volumes:
+      - ${VLLM_HF_CACHE:-./data/huggingface}:/root/.cache/huggingface
+      - ${VLLM_CACHE_DIR:-./data/vllm}:/root/.cache/vllm
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    entrypoint: [vllm, serve]
+    command:
+      - ${VLLM_MODEL:?set VLLM_MODEL in a model env file}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --served-model-name
+      - ${VLLM_SERVED_MODEL:-local-model}
+      - --max-model-len
+      - ${VLLM_MAX_MODEL_LEN:-8192}
+      - --max-num-seqs
+      - ${VLLM_MAX_NUM_SEQS:-1}
+      - --max-num-batched-tokens
+      - ${VLLM_MAX_NUM_BATCHED_TOKENS:-1024}
+      - --gpu-memory-utilization
+      - ${VLLM_GPU_MEMORY_UTILIZATION:-0.05}
+      - --enforce-eager
+      - --swap-space
+      - "0"
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "5"
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)
+      interval: 30s
+      timeout: 10s
+      retries: 60
+      start_period: 15m
