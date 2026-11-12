@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "suites": {
+    "smoke": {
+      "description": "One small GSM8K round for backend connectivity checks.",
+      "datasets": [
+        "gsm8k"
+      ],
+      "train_limit": 5,
+      "eval_limit": 5,
+      "rounds": 1,
+      "max_steps_per_round": 3,
+      "eval_batch_size": 2,
+      "dataset_args": {
+        "gsm8k": {
+          "few_shot_num": 0
+        }
+      }
+    },
+    "reasoning": {
+      "description": "Small multi-benchmark prompt-evolution run.",
+      "datasets": [
+        "gsm8k",
+        "arc"
+      ],
+      "train_limit": 10,
+      "eval_limit": 10,
+      "rounds": 2,
+      "max_steps_per_round": 5,
+      "eval_batch_size": 2,
+      "dataset_args": {
+        "gsm8k": {
+          "few_shot_num": 0
+        },
+        "arc": {
+          "few_shot_num": 0
+        }
+      }
+    }
+  }
+}

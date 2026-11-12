@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   train/eval prompt evolution
 - `examples/evalscope_evolution.py` benchmark harness with GSM8K/ARC support
 - `benchmarks` optional dependency extra for EvalScope
+- Repository-level benchmark suites in `benchmarks/suites.json`
+- `--suite`, `--suite-file`, `--list-suites`, and `--dry-run` benchmark options
+- Suite loader/validator (`scope.benchmarks.suites`) with deep-merged CLI overrides
 
 ## [0.1.1] - 2025-12-18
 

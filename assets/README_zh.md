@@ -384,6 +384,38 @@ python examples/evalscope_evolution.py \
   --datasets gsm8k arc --rounds 3
 ```
 
+#### 基准测试套件
+
+仓库级套件位于 [`benchmarks/suites.json`](../benchmarks/suites.json)，用于让
+基准运行可重复。套件只定义数据集和演化设置，不包含模型、服务商、API 地址
+或输出位置；这些仍由命令行指定。仓库不提交基准数据集，EvalScope 仍会自行
+下载和缓存。
+
+```bash
+# 列出可用套件
+python examples/evalscope_evolution.py --list-suites
+
+# 使用任意后端运行套件
+python examples/evalscope_evolution.py \
+  --suite smoke --provider deepseek --model deepseek-chat
+
+# 显式命令行参数会覆盖套件值
+python examples/evalscope_evolution.py \
+  --suite reasoning --provider deepseek \
+  --rounds 1 --eval-limit 5
+
+# 只解析并打印配置，不调用模型
+python examples/evalscope_evolution.py \
+  --suite smoke --provider local --model dummy \
+  --api-url http://127.0.0.1:8000/v1 --api-key EMPTY \
+  --dry-run
+```
+
+使用 `--suite-file` 或 `SCOPE_BENCHMARK_SUITES` 指定其他清单文件。
+`--dataset-args` 等 JSON 参数会与套件值深度合并，命令行值优先。运行时会把
+解析后的套件保存为 `benchmark_suite.json`。套件格式和本地后端说明见
+[`benchmarks/README.md`](../benchmarks/README.md)。
+
 每轮流程：
 
 1. 在留出的 EvalScope 评测集上评估当前提示词。
@@ -396,6 +428,7 @@ python examples/evalscope_evolution.py \
 ```text
 examples/results/evalscope_evolution/<timestamp>/
   benchmark_summary.json
+  benchmark_suite.json
   prompts/<dataset>/round-00-baseline.txt
   prompts/<dataset>/round-01-train.txt
   prompts/<dataset>/round-01-eval.txt

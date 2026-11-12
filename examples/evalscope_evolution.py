@@ -16,10 +16,22 @@ EvalScope's public output files, so this integration does not vendor or
 duplicate benchmark datasets.
 
 Examples:
+    # List the repository's benchmark suites
+    python examples/evalscope_evolution.py --list-suites
+
+    # Run a named suite (datasets and evolution settings come from the suite)
+    python examples/evalscope_evolution.py \\
+        --suite smoke --provider deepseek --model deepseek-chat
+
     # Quick DeepSeek pilot (requires DEEPSEEK_API_KEY)
     python examples/evalscope_evolution.py \\
         --provider deepseek --model deepseek-chat \\
         --datasets gsm8k arc --train-limit 20 --eval-limit 20 --rounds 2
+
+    # Validate suite wiring without calling a model
+    python examples/evalscope_evolution.py \\
+        --suite smoke --provider local --model dummy \\
+        --api-url http://127.0.0.1:8000/v1 --api-key EMPTY --dry-run
 
     # Use an OpenAI-compatible local server for evaluation and DeepSeek for
     # SCOPE's synthesis model.
@@ -38,14 +50,23 @@ import asyncio
 import json
 import os
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 # Add parent directory to path for local development.
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from _output import add_output_args, run_context
+from _output import _redact, add_output_args, run_context
 from dotenv import load_dotenv
+
+from scope.benchmarks.suites import (
+    SuiteError,
+    get_suite,
+    list_suites,
+    merge_json_dicts,
+    suite_to_arg_defaults,
+)
 
 load_dotenv()
 
@@ -77,6 +98,10 @@ API_KEY_ENV = {
 DEFAULT_BASE_URLS = {
     "deepseek": "https://api.deepseek.com/v1",
 }
+
+DEFAULT_SUITE_FILE = Path(
+    os.getenv("SCOPE_BENCHMARK_SUITES", str(REPO_ROOT / "benchmarks" / "suites.json"))
+).expanduser()
 
 
 def _limit_value(value):
@@ -115,7 +140,7 @@ def _split_datasets(values):
     return datasets
 
 
-def parse_args():
+def build_parser():
     parser = argparse.ArgumentParser(
         description="Evolve benchmark prompts with SCOPE and EvalScope",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -124,9 +149,24 @@ def parse_args():
 
     benchmark = parser.add_argument_group("benchmark")
     benchmark.add_argument(
+        "--suite",
+        default=None,
+        help="Benchmark suite name from the suite file (see --list-suites)",
+    )
+    benchmark.add_argument(
+        "--suite-file",
+        default=str(DEFAULT_SUITE_FILE),
+        help="JSON suite manifest (default: benchmarks/suites.json or " "SCOPE_BENCHMARK_SUITES)",
+    )
+    benchmark.add_argument(
+        "--list-suites",
+        action="store_true",
+        help="List available benchmark suites and exit",
+    )
+    benchmark.add_argument(
         "--datasets",
         nargs="+",
-        required=True,
+        default=None,
         help="EvalScope dataset names (space- or comma-separated), e.g. gsm8k arc",
     )
     benchmark.add_argument(
@@ -237,6 +277,11 @@ def parse_args():
         default="medium",
         help="SCOPE auto-accept confidence threshold (default: medium)",
     )
+    evolution.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Resolve and print the benchmark configuration without running it",
+    )
 
     model = parser.add_argument_group("model")
     model.add_argument(
@@ -291,7 +336,65 @@ def parse_args():
     )
 
     add_output_args(parser)
-    return parser.parse_args()
+    return parser
+
+
+def _parse_suite_args(argv):
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--suite", default=None)
+    parser.add_argument("--suite-file", default=str(DEFAULT_SUITE_FILE))
+    parser.add_argument("--list-suites", action="store_true")
+    known, _ = parser.parse_known_args(argv)
+    return known
+
+
+def parse_args(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    parser = build_parser()
+
+    suite_args = _parse_suite_args(argv)
+    suite_path = Path(suite_args.suite_file).expanduser()
+
+    if suite_args.list_suites:
+        try:
+            suites = list_suites(suite_path)
+        except SuiteError as exc:
+            parser.error(str(exc))
+        print(f"Available benchmark suites in {suite_path}:")
+        for entry in suites:
+            description = entry["description"]
+            if description:
+                print(f"  {entry['name']:<16} {description}")
+            else:
+                print(f"  {entry['name']}")
+        raise SystemExit(0)
+
+    suite = {}
+    if suite_args.suite:
+        try:
+            suite = get_suite(suite_path, suite_args.suite)
+        except SuiteError as exc:
+            parser.error(str(exc))
+        parser.set_defaults(**suite_to_arg_defaults(suite))
+
+    args = parser.parse_args(argv)
+    if not args.datasets:
+        parser.error("--datasets is required unless --suite provides datasets")
+    args.datasets = _split_datasets(args.datasets)
+
+    try:
+        cli_dataset_args = _parse_json_object(args.dataset_args, "--dataset-args")
+        cli_generation_config = _parse_json_object(args.generation_config, "--generation-config")
+        cli_extra_task_kwargs = _parse_json_object(args.extra_task_kwargs, "--extra-task-kwargs")
+    except argparse.ArgumentTypeError as exc:
+        parser.error(str(exc))
+
+    args.dataset_args = merge_json_dicts(suite.get("dataset_args"), cli_dataset_args)
+    args.generation_config = merge_json_dicts(suite.get("generation_config"), cli_generation_config)
+    args.extra_task_kwargs = merge_json_dicts(suite.get("extra_task_kwargs"), cli_extra_task_kwargs)
+    args.suite_config = suite
+    args.suite_file_path = str(suite_path)
+    return args
 
 
 def _resolve_model(provider, model):
@@ -381,10 +484,6 @@ async def main(args):
     synth_api_key = _resolve_api_key(synth_provider, args.synthesizer_api_key)
     synth_api_url = _resolve_api_url(synth_provider, args.synthesizer_api_url)
 
-    dataset_args = _parse_json_object(args.dataset_args, "--dataset-args")
-    generation_config = _parse_json_object(args.generation_config, "--generation-config")
-    extra_task_kwargs = _parse_json_object(args.extra_task_kwargs, "--extra-task-kwargs")
-
     config = EvolutionConfig(
         datasets=datasets,
         provider=args.provider,
@@ -403,13 +502,13 @@ async def main(args):
         failure_threshold=args.failure_threshold,
         max_input_chars=args.max_input_chars,
         base_prompt=_read_base_prompt(args),
-        dataset_args=dataset_args,
+        dataset_args=args.dataset_args,
         dataset_hub=args.dataset_hub,
         dataset_dir=args.dataset_dir,
-        generation_config=generation_config,
+        generation_config=args.generation_config,
         eval_batch_size=args.eval_batch_size,
         ignore_errors=not args.no_ignore_errors,
-        extra_task_kwargs=extra_task_kwargs,
+        extra_task_kwargs=args.extra_task_kwargs,
         agent_name_prefix=args.agent_name_prefix,
         enable_quality_analysis=not args.no_quality_analysis,
         quality_analysis_frequency=args.quality_frequency,
@@ -422,6 +521,29 @@ async def main(args):
         print(f"Benchmark model: {args.provider}/{benchmark_model}")
         print(f"Synthesis model: {synth_provider}/{synth_model_name}")
         print(f"Datasets: {', '.join(datasets)}")
+        if args.suite_config:
+            print(f"Suite: {args.suite} ({args.suite_file_path})")
+
+        suite_artifact = None
+        if args.suite_config:
+            suite_artifact = {
+                "name": args.suite,
+                "path": args.suite_file_path,
+                "config": args.suite_config,
+            }
+            run.save_json("benchmark_suite.json", suite_artifact)
+
+        if args.dry_run:
+            resolved = {
+                "suite": suite_artifact,
+                "config": _redact(asdict(config)),
+            }
+            run.save_json("resolved_config.json", resolved)
+            print("\nResolved benchmark configuration:")
+            print(json.dumps(resolved, indent=2, default=str))
+            run.save_summary({"dry_run": True, "result": resolved})
+            print(f"\nResults directory: {run.run_dir}")
+            return resolved
 
         if args.provider in {"openai", "deepseek", "anthropic"} and not benchmark_api_key:
             env_name = API_KEY_ENV.get(args.provider)

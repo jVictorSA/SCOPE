@@ -426,6 +426,40 @@ python examples/evalscope_evolution.py \
   --rounds 2 --max-steps-per-round 10
 ```
 
+#### Benchmark suites
+
+Repository-level suites in [`benchmarks/suites.json`](benchmarks/suites.json)
+make benchmark runs repeatable. Suites define datasets and evolution settings
+only; the model, provider, API URL, and output location stay on the command
+line. No benchmark datasets are committed — EvalScope still downloads and
+caches them.
+
+```bash
+# List available suites
+python examples/evalscope_evolution.py --list-suites
+
+# Run a suite with any backend
+python examples/evalscope_evolution.py \
+  --suite smoke --provider deepseek --model deepseek-chat
+
+# Explicit flags override suite values
+python examples/evalscope_evolution.py \
+  --suite reasoning --provider deepseek \
+  --rounds 1 --eval-limit 5
+
+# Resolve and print a configuration without calling a model
+python examples/evalscope_evolution.py \
+  --suite smoke --provider local --model dummy \
+  --api-url http://127.0.0.1:8000/v1 --api-key EMPTY \
+  --dry-run
+```
+
+Use `--suite-file` (or `SCOPE_BENCHMARK_SUITES`) to point at another manifest.
+JSON arguments such as `--dataset-args` are deep-merged over suite values, and
+the resolved suite is saved as `benchmark_suite.json` in the run directory. See
+[`benchmarks/README.md`](benchmarks/README.md) for the suite schema and local
+backend guidance.
+
 Use any OpenAI-compatible endpoint for evaluation while SCOPE's synthesis model
 uses DeepSeek:
 
@@ -449,6 +483,7 @@ The run directory contains:
 ```text
 examples/results/evalscope_evolution/<timestamp>/
   benchmark_summary.json
+  benchmark_suite.json
   prompts/<dataset>/round-00-baseline.txt
   prompts/<dataset>/round-01-train.txt
   prompts/<dataset>/round-01-eval.txt

@@ -39,3 +39,6 @@ examples/results/*
 # OS
 .DS_Store
 Thumbs.db
+
+# ssh
+ssh/
